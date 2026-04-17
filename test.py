@@ -20,34 +20,12 @@ jlink.connect('nRF52833_xxAA')
 jlink.rtt_start()
 values = []
 buffer = ""  # Accumulate data across reads
+cap_block = {}  # Store CAP data waiting for ACC data
 
-def parse_cap_block(block_text):
-    """Parse a single complete CAP block (bounded by -----)"""
-    cap_pattern = r"CAP(\d+): ([-+]?\d+(?:\.\d+)?)"
-    cap_matches = re.findall(cap_pattern, block_text)
-
-    time_pattern = r"TIME: ([-+]?\d+(?:\.\d+)?)"
-    time_matches = re.findall(time_pattern, block_text)
-    
-    accx_pattern = r"ACCX: ([-+]?\d+)"
-    accx_matches = re.findall(accx_pattern, block_text)
-    
-    accy_pattern = r"ACCY: ([-+]?\d+)"
-    accy_matches = re.findall(accy_pattern, block_text)
-    
-    accz_pattern = r"ACCZ: ([-+]?\d+)"
-    accz_matches = re.findall(accz_pattern, block_text)
-    
-    # Only create entry if we have all 8 CAP values AND TIME AND accelerometer data
-    if len(cap_matches) == 8 and time_matches and accx_matches and accy_matches and accz_matches:
-        cap_entry = {f"CAP{cap}": float(val) for cap, val in cap_matches}
-        time_entry = {"TIME": float(time_matches[0])}
-        acc_entry = {
-            "ACCX": int(accx_matches[0]),
-            "ACCY": int(accy_matches[0]),
-            "ACCZ": int(accz_matches[0])
-        }
-        entry = cap_entry | time_entry | acc_entry
+def try_create_entry(cap_data, acc_data):
+    """Create entry if both CAP and ACC data are available"""
+    if cap_data and acc_data:
+        entry = cap_data | acc_data
         values.append(entry)
         print(entry)
         return True
@@ -69,8 +47,44 @@ try:
             
             # Process complete blocks (all but the last incomplete one)
             for block in blocks[:-1]:
-                if block.strip():  # Skip empty blocks
-                    parse_cap_block(block)
+                if not block.strip():  # Skip empty blocks
+                    continue
+                
+                # Check if this block has CAP data
+                cap_pattern = r"CAP(\d+): ([-+]?\d+(?:\.\d+)?)"
+                cap_matches = re.findall(cap_pattern, block)
+                
+                if len(cap_matches) == 8:
+                    # This is a CAP block
+                    time_pattern = r"TIME: ([-+]?\d+(?:\.\d+)?)"
+                    time_matches = re.findall(time_pattern, block)
+                    if time_matches:
+                        cap_entry = {f"CAP{cap}": float(val) for cap, val in cap_matches}
+                        cap_entry["TIME"] = float(time_matches[0])
+                        cap_block = cap_entry
+                
+                # Check if this block has ACC data
+                accx_pattern = r"ACCX: ([-+]?\d+)"
+                accy_pattern = r"ACCY: ([-+]?\d+)"
+                accz_pattern = r"ACCZ: ([-+]?\d+)"
+                
+                accx_matches = re.findall(accx_pattern, block)
+                accy_matches = re.findall(accy_pattern, block)
+                accz_matches = re.findall(accz_pattern, block)
+                
+                if accx_matches and accy_matches and accz_matches:
+                    # This is an ACC block
+                    acc_entry = {
+                        "ACCX": int(accx_matches[0]),
+                        "ACCY": int(accy_matches[0]),
+                        "ACCZ": int(accz_matches[0])
+                    }
+                    # Try to combine with stored CAP data
+                    if cap_block:
+                        entry = cap_block | acc_entry
+                        values.append(entry)
+                        print(entry)
+                        cap_block = {}
             
             # Keep incomplete block in buffer
             buffer = blocks[-1]
