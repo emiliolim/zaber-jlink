@@ -29,11 +29,25 @@ def parse_cap_block(block_text):
     time_pattern = r"TIME: ([-+]?\d+(?:\.\d+)?)"
     time_matches = re.findall(time_pattern, block_text)
     
-    # Only create entry if we have all 8 CAP values AND TIME
-    if len(cap_matches) == 8 and time_matches:
+    accx_pattern = r"ACCX: ([-+]?\d+)"
+    accx_matches = re.findall(accx_pattern, block_text)
+    
+    accy_pattern = r"ACCY: ([-+]?\d+)"
+    accy_matches = re.findall(accy_pattern, block_text)
+    
+    accz_pattern = r"ACCZ: ([-+]?\d+)"
+    accz_matches = re.findall(accz_pattern, block_text)
+    
+    # Only create entry if we have all 8 CAP values AND TIME AND accelerometer data
+    if len(cap_matches) == 8 and time_matches and accx_matches and accy_matches and accz_matches:
         cap_entry = {f"CAP{cap}": float(val) for cap, val in cap_matches}
         time_entry = {"TIME": float(time_matches[0])}
-        entry = cap_entry | time_entry
+        acc_entry = {
+            "ACCX": int(accx_matches[0]),
+            "ACCY": int(accy_matches[0]),
+            "ACCZ": int(accz_matches[0])
+        }
+        entry = cap_entry | time_entry | acc_entry
         values.append(entry)
         print(entry)
         return True
