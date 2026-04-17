@@ -19,18 +19,25 @@ jlink.connect('nRF52833_xxAA')
 # Configure Real Time Transfer (RTT)
 jlink.rtt_start()
 values = []
-def parse_and_store(raw_str):
+buffer = ""  # Accumulate data across reads
+
+def parse_cap_block(block_text):
+    """Parse a single complete CAP block (bounded by -----)"""
     cap_pattern = r"CAP(\d+): ([-+]?\d+(?:\.\d+)?)"
-    cap_matches = re.findall(cap_pattern, raw_str)
+    cap_matches = re.findall(cap_pattern, block_text)
 
     time_pattern = r"TIME: ([-+]?\d+(?:\.\d+)?)"
-    time_matches = re.findall(time_pattern, raw_str)
-    if cap_matches:
+    time_matches = re.findall(time_pattern, block_text)
+    
+    # Only create entry if we have all 8 CAP values AND TIME
+    if len(cap_matches) == 8 and time_matches:
         cap_entry = {f"CAP{cap}": float(val) for cap, val in cap_matches}
-        time_entry = {f"TIME": float(val) for val in time_matches}
+        time_entry = {"TIME": float(time_matches[0])}
         entry = cap_entry | time_entry
         values.append(entry)
         print(entry)
+        return True
+    return False
 
 try:
     input("wait")
@@ -40,9 +47,20 @@ try:
 
         # Convert byte list to string
         text = bytes(data).decode('utf-8')
-        if data:
-            print(text)
-            parse_and_store(text)
+        if text:
+            buffer += text
+            
+            # Split by block delimiter (-----)
+            blocks = buffer.split('-----')
+            
+            # Process complete blocks (all but the last incomplete one)
+            for block in blocks[:-1]:
+                if block.strip():  # Skip empty blocks
+                    parse_cap_block(block)
+            
+            # Keep incomplete block in buffer
+            buffer = blocks[-1]
+        
         time.sleep(0.1)
 except KeyboardInterrupt:
     jlink.rtt_stop()
