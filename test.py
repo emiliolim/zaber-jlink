@@ -50,12 +50,23 @@ def cleanup_and_exit(signum, frame):
     Saves the values array into a excel file before exiting this subprocess
     """
     print("Running pre-exit tasks")
+    try:
+        jlink.rtt_stop()
+    except Exception as exc:
+        print(f"Failed to stop RTT cleanly: {exc}")
+    try:
+        jlink.close()
+    except Exception as exc:
+        print(f"Failed to close JLink cleanly: {exc}")
     print(values)
     print("Cleanup complete. Exiting")
     sys.exit(0)
 
 # Register the handler 
 signal.signal(signal.SIGTERM, cleanup_and_exit)
+if hasattr(signal, 'SIGBREAK'):
+    signal.signal(signal.SIGBREAK, cleanup_and_exit)
+
 try:
     while True:
         # Read from RTT terminal 0
@@ -115,6 +126,4 @@ try:
         
         time.sleep(0.1)
 except KeyboardInterrupt:
-    jlink.rtt_stop()
-    jlink.close()
     cleanup_and_exit(None, None)
