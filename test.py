@@ -2,6 +2,17 @@
 Use the pylink library to automatically read and parse
 incoming data from the jlink connection
 
+Current structure:
+0) Main Zaber script starts THIS subprocess
+1) Main function for this script takes in args from main Zaber script (save path) 
+2) Opens Jlink connection 
+3) Verifies that Jlink is recieving CAP data TODO: (Not done)
+4) Begins data reading
+5) Once test is finished in main script:
+    5a) End data reading
+    5b) Save data to CAP folder
+    5c) Exit subprocess
+
 Requires:
 pylink
 pylink-square
@@ -9,8 +20,11 @@ pylink-square
 import pylink
 import time
 import re
+import signal
+import sys
 from pylink.enums import JLinkInterfaces
 
+print("Subprocess starting")
 jlink = pylink.JLink()
 jlink.open()
 jlink.set_tif(JLinkInterfaces.SWD)
@@ -27,12 +41,22 @@ def try_create_entry(cap_data, acc_data):
     if cap_data and acc_data:
         entry = cap_data | acc_data
         values.append(entry)
-        print(entry)
+        #print(entry)
         return True
     return False
 
+def cleanup_and_exit(signum, frame):
+    """
+    Saves the values array into a excel file before exiting this subprocess
+    """
+    print("Running pre-exit tasks")
+    print(values)
+    print("Cleanup complete. Exiting")
+    sys.exit(0)
+
+# Register the handler 
+signal.signal(signal.SIGTERM, cleanup_and_exit)
 try:
-    input("wait")
     while True:
         # Read from RTT terminal 0
         data = jlink.rtt_read(0, 1024)
@@ -83,7 +107,7 @@ try:
                     if cap_block:
                         entry = cap_block | acc_entry
                         values.append(entry)
-                        print(entry)
+                        #print(entry)
                         cap_block = {}
             
             # Keep incomplete block in buffer
@@ -93,3 +117,4 @@ try:
 except KeyboardInterrupt:
     jlink.rtt_stop()
     jlink.close()
+    cleanup_and_exit(None, None)
