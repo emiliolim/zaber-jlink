@@ -9,10 +9,12 @@ import sys
 import os
 import signal
 
-def run_test():
+def run_test(save_path, run_number):
+    cmd = [sys.executable, 'test2.py', save_path, str(run_number)] # this is the command to run the test script. The second argument is the path where the data will be saved, and the third argument is the run number
+
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
     proc = subprocess.Popen(
-        [sys.executable, 'test.py'],
+        cmd,
         creationflags=creationflags,
     )
 
@@ -31,11 +33,11 @@ def run_test():
 
         # now wait for subprocess to cleanup
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=10)
             print("Subprocess exited cleanly")
         except subprocess.TimeoutExpired:
             print("Subprocess took to long. Killing script")
             proc.kill()
 
-run_test()
+run_test("CAP", 1)
             
