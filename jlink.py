@@ -79,6 +79,27 @@ def save_data(values, savepath, run):
         worksheet.write(i + 1, 12, entry.get('ACCZ', '')) # ACCZ
     workbook.close()
 
+def verify_rtt_connection(jlink, timeout=10):
+    """
+    Verify that RTT is receiving data from the device.
+    Returns True if data is received, False otherwise.
+    """
+    print(f"Verifying RTT connection (timeout: {timeout}s)...")
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        data = jlink.rtt_read(0, 1024)
+        if data:
+            text = bytes(data).decode('utf-8', errors='ignore')
+            if text.strip():
+                print(f"RTT connection verified! Initial data: {text[:100]}...")
+                return True
+        time.sleep(0.5)
+    
+    print("Warning: No data received from RTT within timeout period")
+    return False
+
+
 def main(savepath, run):
     """
     savepath:: string
@@ -92,6 +113,11 @@ def main(savepath, run):
 
     # Configure Real Time Transfer (RTT)
     jlink.rtt_start()
+    
+    # Verify RTT connection before starting data collection
+    if not verify_rtt_connection(jlink, timeout=10):
+        print("Warning: Proceeding despite RTT verification failure")
+    
     values = []
     buffer = ""  # Accumulate data across reads
     cap_block = {}  # Store CAP data waiting for ACC data
