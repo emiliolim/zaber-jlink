@@ -34,14 +34,23 @@ jlink.connect('nRF52833_xxAA')
 jlink.rtt_start()
 values = []
 buffer = ""  # Accumulate data across reads
-cap_block = {}  # Store CAP data waiting for ACC data
+current_entry = {}
 
-def try_create_entry(cap_data, acc_data):
-    """Create entry if both CAP and ACC data are available"""
-    if cap_data and acc_data:
-        entry = cap_data | acc_data
-        values.append(entry)
-        #print(entry)
+TIME_PATTERN = re.compile(r"TIME:\s*([-+]?\d+(?:\.\d+)?)")
+A_PATTERN = re.compile(r"A:\s*([-+]?\d+),([-+]?\d+),([-+]?\d+)")
+C_PATTERN = re.compile(r"C:\s*([-+]?\d+),([-+]?\d+),([-+]?\d+),([-+]?\d+)")
+
+
+def is_complete_entry(entry):
+    if not entry:
+        return False
+    required_keys = ["TIME", "ACCX", "ACCY", "ACCZ"] + [f"CAP{i}" for i in range(1, 9)]
+    return all(key in entry for key in required_keys)
+
+
+def append_entry(entry):
+    if is_complete_entry(entry):
+        values.append(entry.copy())
         return True
     return False
 
@@ -58,6 +67,7 @@ def cleanup_and_exit(signum, frame):
         jlink.close()
     except Exception as exc:
         print(f"Failed to close JLink cleanly: {exc}")
+    append_entry(current_entry)
     print(values)
     print("Cleanup complete. Exiting")
     sys.exit(0)
@@ -76,54 +86,49 @@ try:
         text = bytes(data).decode('utf-8')
         if text:
             buffer += text
-            
-            # Split by block delimiter (-----)
-            blocks = buffer.split('-----')
-            
-            # Process complete blocks (all but the last incomplete one)
-            for block in blocks[:-1]:
-                if not block.strip():  # Skip empty blocks
+            lines = buffer.splitlines(keepends=True)
+            processed_lines = []
+
+            # Keep the last partial line in the buffer
+            if lines and not lines[-1].endswith("\n"):
+                processed_lines = lines[:-1]
+                buffer = lines[-1]
+            else:
+                processed_lines = lines
+                buffer = ""
+
+            for raw_line in processed_lines:
+                line = raw_line.strip()
+                if not line:
                     continue
-                
-                # Check if this block has CAP data
-                cap_pattern = r"CAP(\d+): ([-+]?\d+(?:\.\d+)?)"
-                cap_matches = re.findall(cap_pattern, block)
-                
-                if len(cap_matches) == 8:
-                    # This is a CAP block
-                    time_pattern = r"TIME: ([-+]?\d+(?:\.\d+)?)"
-                    time_matches = re.findall(time_pattern, block)
-                    if time_matches:
-                        cap_entry = {f"CAP{cap}": float(val) for cap, val in cap_matches}
-                        cap_entry["TIME"] = float(time_matches[0])
-                        cap_block = cap_entry
-                
-                # Check if this block has ACC data
-                accx_pattern = r"ACCX: ([-+]?\d+)"
-                accy_pattern = r"ACCY: ([-+]?\d+)"
-                accz_pattern = r"ACCZ: ([-+]?\d+)"
-                
-                accx_matches = re.findall(accx_pattern, block)
-                accy_matches = re.findall(accy_pattern, block)
-                accz_matches = re.findall(accz_pattern, block)
-                
-                if accx_matches and accy_matches and accz_matches:
-                    # This is an ACC block
-                    acc_entry = {
-                        "ACCX": int(accx_matches[0]),
-                        "ACCY": int(accy_matches[0]),
-                        "ACCZ": int(accz_matches[0])
+
+                time_match = TIME_PATTERN.search(line)
+                if time_match:
+                    # finalize previous record if complete
+                    if current_entry:
+                        append_entry(current_entry)
+                    current_entry = {
+                        "TIME": float(time_match.group(1)),
+                        "C_count": 0,
                     }
-                    # Try to combine with stored CAP data
-                    if cap_block:
-                        entry = cap_block | acc_entry
-                        values.append(entry)
-                        #print(entry)
-                        cap_block = {}
-            
-            # Keep incomplete block in buffer
-            buffer = blocks[-1]
-        
+                    continue
+
+                a_match = A_PATTERN.search(line)
+                if a_match and current_entry:
+                    current_entry["ACCX"] = int(a_match.group(1))
+                    current_entry["ACCY"] = int(a_match.group(2))
+                    current_entry["ACCZ"] = int(a_match.group(3))
+                    continue
+
+                c_match = C_PATTERN.search(line)
+                if c_match and current_entry is not None:
+                    count = current_entry.get("C_count", 0)
+                    for idx, value in enumerate(c_match.groups(), start=1):
+                        channel = count * 4 + idx
+                        current_entry[f"CAP{channel}"] = int(value)
+                    current_entry["C_count"] = count + 1
+                    continue
+
         time.sleep(0.1)
 except KeyboardInterrupt:
     cleanup_and_exit(None, None)

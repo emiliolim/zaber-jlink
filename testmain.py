@@ -10,7 +10,7 @@ import os
 import signal
 
 def run_test(save_path, run_number):
-    cmd = [sys.executable, 'test2.py', save_path, str(run_number)] # this is the command to run the test script. The second argument is the path where the data will be saved, and the third argument is the run number
+    cmd = [sys.executable, 'jlink.py', save_path, str(run_number)] # this is the command to run the test script. The second argument is the path where the data will be saved, and the third argument is the run number
 
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
     proc = subprocess.Popen(

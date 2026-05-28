@@ -201,7 +201,7 @@ def main(savepath, run):
                 # Keep incomplete block in buffer
                 buffer = blocks[-1]
 
-            time.sleep(0.1)
+            #time.sleep(0.1)
     except KeyboardInterrupt:
         cleanup_and_exit(None, None)
 
