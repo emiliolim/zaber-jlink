@@ -25,6 +25,88 @@ import sys
 from pathlib import Path
 import xlsxwriter
 from pylink.enums import JLinkInterfaces
+import math
+
+# Sensor constants for motion data conversion
+# These values depend on your specific IMU configuration
+# Typical values for nRF52833 with standard IMU:
+# - Accelerometer: ±16g full scale
+# - Gyroscope: ±2000°/s full scale
+# - Magnetometer: ±4800 µT full scale (adjust based on your sensor)
+ACCEL_FULL_SCALE = 16.0  # g (±16g)
+GYRO_FULL_SCALE = 2000.0  # °/s (±2000°/s)
+MAG_FULL_SCALE = 4800.0  # µT (±4800 µT) - adjust if needed
+
+# Capacitance conversion constants
+CAPACITANCE_CONSTANTS = [13, 13, 13, 13,
+                         30, 30, 30, 30,
+                         22, 22, 22, 22,
+                         39, 39, 39, 39]
+
+
+def convert_capacitance(raw_value, channel):
+    """
+    Convert raw capacitance value to picoFarads.
+    Based on BluetoothController.swift capacitorValues() function.
+    
+    Args:
+        raw_value: Raw 32-bit integer from device
+        channel: Channel index (0-15) for selecting appropriate constant
+    
+    Returns:
+        Capacitance value in picoFarads (pF)
+    """
+    # Scale the raw value by the internal hardware clock running at 40Mhz
+    # Scale by 2 to account for the rising/falling edges of the clock signal
+    # (This is a hardware edge prescaler)
+    cap_reading = 2.0 * 40000000.0 * raw_value
+    
+    # Normalize by 2^28 (this is the chip's 28-bit limit)
+    cap_reading = cap_reading / (2.0 ** 28.0)
+    
+    # Using the resonant frequency formula with inductance/capacitance
+    # we solve for capacitance (c) instead of frequency (f)
+    # 18e-6: Fixed hardware inductance 
+    # This solved for the denominator of the frequency formula
+    L = 18e-6
+    cap_reading = L * ((2.0 * math.pi * cap_reading) ** 2.0)
+    
+    # Invert and convert to picoFarads (10^12)
+    cap_reading = (1.0 / cap_reading) * (10.0 ** 12.0)
+    
+    # Adjust capacitance value for parasitic capacitance
+    if channel < len(CAPACITANCE_CONSTANTS):
+        cap_reading = cap_reading - CAPACITANCE_CONSTANTS[channel]
+    
+    return cap_reading
+
+
+def convert_motion_value(raw_value, sensor_index):
+    """
+    Convert raw motion value to physical units.
+    Based on BluetoothController.swift motionValues() function.
+    
+    Sensor index mapping:
+        0-2: Accelerometer (X, Y, Z) -> g (gravitational acceleration)
+        3-5: Gyroscope (X, Y, Z) -> °/s (degrees per second)
+        6-8: Magnetometer (X, Y, Z) -> µT (microtesla)
+    
+    Args:
+        raw_value: Raw 16-bit signed integer from device
+        sensor_index: Index determining sensor type and full scale
+    
+    Returns:
+        Physical unit value (g, °/s, or µT depending on sensor type)
+    """
+    motion_constants = [ACCEL_FULL_SCALE, ACCEL_FULL_SCALE, ACCEL_FULL_SCALE,
+                        GYRO_FULL_SCALE, GYRO_FULL_SCALE, GYRO_FULL_SCALE,
+                        MAG_FULL_SCALE, MAG_FULL_SCALE, MAG_FULL_SCALE]
+    
+    if sensor_index < len(motion_constants):
+        # Convert from 16-bit representation to physical units
+        return raw_value * motion_constants[sensor_index] / 32768.0
+    
+    return float(raw_value)
 
 
 def try_create_entry(cap_data, acc_data, values):
@@ -197,9 +279,10 @@ def main(savepath, run):
 
                     a_match = A_PATTERN.search(line)
                     if a_match and current_entry is not None:
-                        current_entry["ACCX"] = int(a_match.group(1))
-                        current_entry["ACCY"] = int(a_match.group(2))
-                        current_entry["ACCZ"] = int(a_match.group(3))
+                        # Convert raw acceleration values to physical units (g)
+                        current_entry["ACCX"] = convert_motion_value(int(a_match.group(1)), 0)
+                        current_entry["ACCY"] = convert_motion_value(int(a_match.group(2)), 1)
+                        current_entry["ACCZ"] = convert_motion_value(int(a_match.group(3)), 2)
                         continue
 
                     c_match = C_PATTERN.search(line)
@@ -207,7 +290,10 @@ def main(savepath, run):
                         count = current_entry.get("C_count", 0)
                         for idx, value in enumerate(c_match.groups(), start=1):
                             channel = count * 4 + idx
-                            current_entry[f"CAP{channel}"] = int(value)
+                            # Convert raw capacitance value to picoFarads (pF)
+                            # channel indices are 1-16, but CAPACITANCE_CONSTANTS are 0-indexed
+                            cap_index = channel - 1
+                            current_entry[f"CAP{channel}"] = convert_capacitance(int(value), cap_index)
                         current_entry["C_count"] = count + 1
                         continue
 

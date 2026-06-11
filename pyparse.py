@@ -114,7 +114,7 @@ def format_value(value: Optional[float]) -> str:
     return "n/a" if value is None else f"{value:.6f}"
 
 
-def plot_deltas(times: List[float], deltas: List[float], title: str, output_path: Path) -> None:
+def plot_deltas(times: List[float], deltas: List[float], title: str, output_path: Path, yzoom: Optional[float] = None) -> None:
     if plt is None:
         print("matplotlib is not installed; cannot create plot.")
         return
@@ -126,6 +126,26 @@ def plot_deltas(times: List[float], deltas: List[float], title: str, output_path
     ax.set_xlabel("TIME (sec)")
     ax.set_ylabel("Delta TIME (sec)")
     ax.set_title(title)
+
+    mean_delta, deviation = compute_statistics(deltas)
+    if mean_delta is None:
+        mean_delta = 0.0
+    if deviation is None:
+        deviation = 0.0
+
+    if yzoom is not None:
+        span = float(yzoom)
+    else:
+        span = max(5 * (deviation or 0.0), 0.002)
+
+    ax.set_ylim(mean_delta - span, mean_delta + span)
+    try:
+        import matplotlib.ticker as mticker
+        ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.6f"))
+        ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
+    except Exception:
+        pass
+
     ax.grid(True, linestyle="--", alpha=0.5)
     fig.tight_layout()
     fig.savefig(output_path)
@@ -133,7 +153,7 @@ def plot_deltas(times: List[float], deltas: List[float], title: str, output_path
     print(f"  Plot saved to {output_path}")
 
 
-def analyze_file(file_path: Path, time_limit: Optional[float], debug: bool, plot: bool, plot_dir: Optional[Path]) -> None:
+def analyze_file(file_path: Path, time_limit: Optional[float], debug: bool, plot: bool, plot_dir: Optional[Path], yzoom: Optional[float]) -> None:
     print(f"\nAnalyzing {file_path.name}")
     times = parse_times_from_xlsx(file_path, time_limit=time_limit)
     if not times:
@@ -168,15 +188,16 @@ def analyze_file(file_path: Path, time_limit: Optional[float], debug: bool, plot
         else:
             plot_dir.mkdir(parents=True, exist_ok=True)
             output_path = plot_dir / f"{file_path.stem}-delta.png"
-        plot_deltas(times, deltas, f"Delta over time for {file_path.name}", output_path)
+        plot_deltas(times, deltas, f"Delta over time for {file_path.name}", output_path, yzoom=yzoom)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Parse Excel files and analyze the TIME column.")
-    parser.add_argument("folder", type=Path, nargs="?", default=Path("python-tests-no-zaber"), help="Folder containing .xlsx files to analyze.")
+    parser.add_argument("folder", type=Path, nargs="?", default=Path("python-tests-with-zaber/cap"), help="Folder containing .xlsx files to analyze.")
     parser.add_argument("--limit", type=float, default=None, help="Optional TIME limit in seconds.")
     parser.add_argument("--debug", action="store_true", help="Print negative TIME deltas for each file.")
     parser.add_argument("--plot", action="store_true", help="Save plots of delta over time for each file.")
+    parser.add_argument("--yzoom", type=float, default=None, help="Half-range for y-axis in seconds (e.g. 0.001). Overrides automatic scaling.")
     parser.add_argument("--plot-dir", type=Path, default=None, help="Optional directory to save plot files.")
     args = parser.parse_args()
 
@@ -189,7 +210,7 @@ def main() -> None:
         raise SystemExit(f"No .xlsx files found in {folder}")
 
     for file_path in files:
-        analyze_file(file_path, time_limit=args.limit, debug=args.debug, plot=args.plot, plot_dir=args.plot_dir)
+        analyze_file(file_path, time_limit=args.limit, debug=args.debug, plot=args.plot, plot_dir=args.plot_dir, yzoom=args.yzoom)
 
 
 if __name__ == "__main__":
