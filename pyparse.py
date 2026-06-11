@@ -193,7 +193,7 @@ def analyze_file(file_path: Path, time_limit: Optional[float], debug: bool, plot
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Parse Excel files and analyze the TIME column.")
-    parser.add_argument("folder", type=Path, nargs="?", default=Path("python-tests-with-zaber/cap"), help="Folder containing .xlsx files to analyze.")
+    parser.add_argument("folder", type=Path, nargs="?", default=Path("python-tests-no-zaber/post-conversion-code/"), help="Folder containing .xlsx files to analyze.")
     parser.add_argument("--limit", type=float, default=None, help="Optional TIME limit in seconds.")
     parser.add_argument("--debug", action="store_true", help="Print negative TIME deltas for each file.")
     parser.add_argument("--plot", action="store_true", help="Save plots of delta over time for each file.")
