@@ -22,7 +22,7 @@ def run_test(save_path, run_number):
 
     # Zaber port connection
     zaber = ZaberCLI()
-    connection = zaber.connect(comport="COM3")
+    connection = zaber.connect(comport="COM7")
 
     # Futek Load Cell setup
     futek = FUTEKDeviceCLI()
@@ -55,5 +55,5 @@ def run_test(save_path, run_number):
             print("Subprocess took too long. Killing script")
             proc.kill()
 
-run_test("CAP", 1)
+run_test("wavegen", 1)
             
