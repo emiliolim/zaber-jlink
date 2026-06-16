@@ -20,6 +20,7 @@ except ImportError:
     plt = None
 
 import openpyxl
+import json
 
 TIME_VALUE_PATTERN = re.compile(r"([-+]?\d+(?:\.\d+)?)")
 
@@ -261,15 +262,57 @@ def analyze_file(
     deltas = compute_deltas(times)
     mean_delta, deviation = compute_statistics(deltas)
 
-    print(f"  Parsed {len(times)} TIME entries")
-    print(f"  First TIME: {format_value(times[0])} sec")
-    print(f"  Last TIME: {format_value(times[-1])} sec")
-    print(f"  Mean delta: {format_value(mean_delta)} sec")
-    print(f"  Delta deviation: {format_value(deviation)} sec")
+    # Build summary dictionary (will be saved as JSON)
+    negative_pairs = find_negative_deltas(times)
+
+    summary: dict = {
+        "file": file_path.name,
+        "parsed_time_entries": len(times),
+        "first_time": times[0],
+        "last_time": times[-1],
+        "mean_delta": None if mean_delta is None else mean_delta,
+        "delta_deviation": None if deviation is None else deviation,
+    }
 
     if deltas:
-        print(f"  Min delta: {format_value(min(deltas))} sec")
-        print(f"  Max delta: {format_value(max(deltas))} sec")
+        summary["min_delta"] = min(deltas)
+        summary["max_delta"] = max(deltas)
+
+    # Compute per-channel and mean peak-trough delta across CAP channels (pF)
+    cap_deltas: dict[str, float] = {}
+    for channel in sorted(cap_data.keys(), key=lambda name: int(name[3:])):
+        values = [v for v in cap_data[channel] if v is not None]
+        if not values:
+            continue
+        cap_delta = max(values) - min(values)
+        cap_deltas[channel] = cap_delta
+
+    if cap_deltas:
+        summary["cap_peak_trough"] = cap_deltas
+        summary["mean_cap_peak_trough"] = statistics.mean(cap_deltas.values())
+    else:
+        summary["cap_peak_trough"] = {}
+        summary["mean_cap_peak_trough"] = None
+
+    # Include negative deltas in the JSON when debug mode is on
+    if debug:
+        summary["negative_deltas"] = [
+            {"previous": p, "current": c, "delta": d} for p, c, d in negative_pairs
+        ]
+
+    # Determine output JSON path
+    if plot_dir is None:
+        summary_path = file_path.with_suffix("").with_name(f"{file_path.stem}-summary.json")
+    else:
+        plot_dir.mkdir(parents=True, exist_ok=True)
+        summary_path = plot_dir / f"{file_path.stem}-summary.json"
+
+    try:
+        with summary_path.open("w", encoding="utf-8") as fh:
+            json.dump(summary, fh, indent=2)
+        print(f"  Summary saved to {summary_path}")
+    except Exception as exc:
+        print(f"  Failed to save summary to {summary_path}: {exc}")
 
     if debug:
         negative_pairs = find_negative_deltas(times)
