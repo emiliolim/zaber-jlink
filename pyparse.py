@@ -48,7 +48,9 @@ def find_time_column(header_row) -> Optional[int]:
     for index, cell in enumerate(header_row):
         if cell is None:
             continue
-        if str(cell).strip().upper() == "TIME":
+        name = str(cell).strip().upper()
+        # accept 'TIME', 'TIME(s)', or any header that starts with 'TIME'
+        if name.startswith("TIME"):
             return index
     return None
 
@@ -59,10 +61,13 @@ def find_cap_columns(header_row) -> dict[str, int]:
         if cell is None:
             continue
         name = str(cell).strip().upper()
-        if name.startswith("CAP") and name[3:].isdigit():
-            cap_index = int(name[3:])
-            if 1 <= cap_index <= 8:
-                cap_columns[name] = index
+        # Accept headers like 'CAP1', 'CAP1(PF)', or 'CAP 1 (pF)'
+        m = re.match(r"^CAP\s*(\d+)", name)
+        if not m:
+            continue
+        cap_index = int(m.group(1))
+        if 1 <= cap_index <= 8:
+            cap_columns[f"CAP{cap_index}"] = index
     return cap_columns
 
 
