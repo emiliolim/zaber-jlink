@@ -136,6 +136,34 @@ def compute_statistics(values: Iterable[float]) -> Tuple[Optional[float], Option
     return statistics.mean(values_list), statistics.pstdev(values_list)
 
 
+def compute_mean_peak_trough(values: Iterable[Optional[float]]) -> Optional[float]:
+    """Compute the mean peak-to-trough amplitude from a time series.
+
+    Method: find local extrema (strict or equal neighbor allowed) and compute
+    absolute differences between consecutive extrema; return their mean.
+    Returns None if not enough extrema are found.
+    """
+    vals = [v for v in values if v is not None]
+    if len(vals) < 3:
+        return None
+
+    extrema: List[float] = []
+    for i in range(1, len(vals) - 1):
+        prev, cur, nxt = vals[i - 1], vals[i], vals[i + 1]
+        if cur >= prev and cur >= nxt and not (cur == prev == nxt):
+            extrema.append(cur)
+        elif cur <= prev and cur <= nxt and not (cur == prev == nxt):
+            extrema.append(cur)
+
+    if len(extrema) < 2:
+        return None
+
+    diffs = [abs(extrema[i + 1] - extrema[i]) for i in range(len(extrema) - 1)]
+    if not diffs:
+        return None
+    return statistics.mean(diffs)
+
+
 def format_value(value: Optional[float]) -> str:
     return "n/a" if value is None else f"{value:.6f}"
 
@@ -280,12 +308,16 @@ def analyze_file(
 
     # Compute per-channel and mean peak-trough delta across CAP channels (pF)
     cap_deltas: dict[str, float] = {}
+    cap_mean_peak_troughs: dict[str, Optional[float]] = {}
     for channel in sorted(cap_data.keys(), key=lambda name: int(name[3:])):
         values = [v for v in cap_data[channel] if v is not None]
         if not values:
             continue
         cap_delta = max(values) - min(values)
         cap_deltas[channel] = cap_delta
+        # compute mean of individual peak-trough amplitudes for this channel
+        mean_pt = compute_mean_peak_trough(cap_data[channel])
+        cap_mean_peak_troughs[channel] = mean_pt
 
     if cap_deltas:
         summary["cap_peak_trough"] = cap_deltas
@@ -293,6 +325,8 @@ def analyze_file(
     else:
         summary["cap_peak_trough"] = {}
         summary["mean_cap_peak_trough"] = None
+    # include per-channel mean peak-trough amplitudes (average of per-cycle peak-troughs)
+    summary["cap_mean_peak_troughs"] = cap_mean_peak_troughs
 
     # Include negative deltas in the JSON when debug mode is on
     if debug:
